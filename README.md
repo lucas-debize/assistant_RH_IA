@@ -15,11 +15,26 @@ flowchart LR
   gen --> n8n
 ```
 
-| Média | Chemin | Description |
-|-------|--------|-------------|
-| Workflow n8n | `assets/images/workflow-n8n.png` | Capture du workflow publié |
-| Notification | `assets/images/notification-email.png` | Email de score reçu par le recruteur |
-| Démo vidéo | `assets/videos/demo.mp4` | Parcours complet (envoi email → notification) |
+### Workflow n8n
+
+Capture du workflow publié dans l'interface n8n.
+
+![Workflow n8n publié](assets/images/workflow-n8n.png)
+
+### Notification recruteur
+
+Email de score reçu par le recruteur après analyse du CV.
+
+![Notification email recruteur](assets/images/notification-email.png)
+
+### Démo vidéo
+
+Parcours complet : envoi d'un email avec CV → analyse IA → notification.
+
+<video src="assets/videos/demo.mp4" controls width="100%">
+  Votre navigateur ne supporte pas la lecture vidéo.
+  <a href="assets/videos/demo.mp4">Télécharger la démo</a>.
+</video>
 
 
 ## Principe
@@ -67,7 +82,7 @@ Gmail : activer IMAP + [mot de passe d'application](https://myaccount.google.com
 3. Envoyer un email avec PDF à `IMAP_USER`
 4. Vérifier la notification sur `RECRUITER_EMAIL` (quelques secondes)
 
-Les résultats en base s'affichent en terminal (pas de capture requise) :
+Les résultats en base s'affichent en terminal :
 
 ```bash
 docker compose exec postgres psql -U rh_admin -d assistant_rh -c \
@@ -76,12 +91,12 @@ docker compose exec postgres psql -U rh_admin -d assistant_rh -c \
 
 ## Architecture
 
-| Service | Rôle | URL |
-|---------|------|-----|
-| n8n | Orchestration | http://localhost:5678 |
-| pdf-extractor | Extraction PDF | http://localhost:8080 |
-| Ollama | IA locale | http://localhost:11434 |
-| PostgreSQL | Stockage | localhost:5432 |
+| Service | Rôle |
+|---------|------|
+| n8n | Orchestration |
+| pdf-extractor | Extraction PDF |
+| Ollama | IA locale |
+| PostgreSQL | Stockage |
 
 ## Structure du projet
 
