@@ -1,0 +1,6 @@
+.env
+*.log
+n8n/generated/
+n8n_data/
+postgres_data/
+ollama_data/

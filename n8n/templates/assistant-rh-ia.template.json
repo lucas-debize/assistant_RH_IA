@@ -1,0 +1,375 @@
+{
+  "id": "b2c3d4e5-0001-4000-8000-000000000001",
+  "name": "Assistant RH IA - Traitement candidatures",
+  "nodes": [
+    {
+      "parameters": {
+        "mailbox": "@@IMAP_MAILBOX@@",
+        "postProcessAction": "read",
+        "downloadAttachments": true,
+        "options": {
+          "trackLastMessageId": true
+        }
+      },
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Email reçu (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "credentials": {
+        "imap": {
+          "id": "a1b2c3d4-0001-4000-8000-000000000001",
+          "name": "IMAP Candidatures"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\n\nfor (const item of $input.all()) {\n  const binary = item.binary || {};\n  const json = item.json;\n\n  const messageId = json.messageId || String(json.uid || json.id || '');\n  const fromRaw = json.from;\n  let emailExpediteur = 'inconnu@email.com';\n  if (typeof fromRaw === 'string') {\n    emailExpediteur = fromRaw;\n  } else if (fromRaw?.value?.[0]?.address) {\n    emailExpediteur = fromRaw.value[0].address;\n  } else if (fromRaw?.text) {\n    emailExpediteur = fromRaw.text;\n  }\n\n  const sujet = json.subject || '(sans objet)';\n  const dateReception = json.date || new Date().toISOString();\n\n  for (const [key, attachment] of Object.entries(binary)) {\n    const mimeType = (attachment.mimeType || attachment.fileType || '').toLowerCase();\n    let isPdf = mimeType === 'application/pdf' || mimeType.includes('pdf');\n\n    if (!isPdf && attachment.data) {\n      try {\n        const header = Buffer.from(attachment.data, 'base64').slice(0, 4).toString('ascii');\n        isPdf = header === '%PDF';\n      } catch (_) {\n        isPdf = false;\n      }\n    }\n\n    if (isPdf) {\n      results.push({\n        json: {\n          messageId,\n          email_expediteur: emailExpediteur,\n          sujet_email: sujet,\n          date_reception: dateReception,\n          nom_fichier_cv: attachment.fileName || attachment.filename || 'document.pdf',\n          attachment_key: key\n        },\n        binary: {\n          pdf: attachment\n        }\n      });\n    }\n  }\n}\n\nreturn results;"
+      },
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Filtrer pièces jointes PDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-has-items",
+              "leftValue": "={{ $input.all().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "PDF trouvé ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "@@PDF_EXTRACTOR_URL@@/extract",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "pdf"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "name": "Extraire texte PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, titre, description, competences_requises FROM offre_emploi WHERE active = TRUE ORDER BY id DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "name": "Récupérer offre active",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, 400],
+      "credentials": {
+        "postgres": {
+          "id": "a1b2c3d4-0002-4000-8000-000000000002",
+          "name": "PostgreSQL RH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "name": "Fusionner CV et offre",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet extracted = null;\nlet offre = null;\n\nfor (const item of items) {\n  const j = item.json;\n  if (j.text) {\n    extracted = j;\n  } else if (j.titre && j.description) {\n    offre = j;\n  }\n}\n\nconst meta = $('Filtrer pièces jointes PDF').item.json;\n\nif (!extracted?.text) throw new Error('Texte CV manquant après extraction PDF');\nif (!offre) throw new Error('Aucune offre d\\'emploi active en base');\n\nconst competencesReq = typeof offre.competences_requises === 'string'\n  ? offre.competences_requises\n  : JSON.stringify(offre.competences_requises || []);\n\nconst prompt = `Tu es un assistant RH expert. Analyse le CV suivant par rapport à l'offre d'emploi.\n\nOFFRE D'EMPLOI : ${offre.titre}\n${offre.description}\nCompétences requises : ${competencesReq}\n\nCV DU CANDIDAT :\n${extracted.text.substring(0, 12000)}\n\nRéponds UNIQUEMENT avec un objet JSON valide, sans markdown ni texte autour :\n{\n  \"resume\": \"résumé du profil en 3 à 5 phrases\",\n  \"competences\": [\"compétence1\", \"compétence2\"],\n  \"score_compatibilite\": 75,\n  \"points_forts\": [\"point fort 1\"],\n  \"points_faibles\": [\"point faible 1\"]\n}\n\nLe score_compatibilite doit être un entier entre 0 et 100.`;\n\nreturn [{\n  json: {\n    prompt,\n    messageId: meta.messageId,\n    email_expediteur: meta.email_expediteur,\n    sujet_email: meta.sujet_email,\n    date_reception: meta.date_reception,\n    nom_fichier_cv: meta.nom_fichier_cv,\n    texte_cv: extracted.text,\n    offre_emploi_id: offre.id,\n    offre_titre: offre.titre\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "name": "Préparer prompt IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "@@OLLAMA_URL@@/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"@@OLLAMA_MODEL@@\",\n  \"prompt\": {{ JSON.stringify($json.prompt) }},\n  \"stream\": false,\n  \"format\": \"json\",\n  \"options\": {\n    \"temperature\": 0.3,\n    \"num_predict\": 1024\n  }\n}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "a1b2c3d4-0009-4000-8000-000000000009",
+      "name": "Analyser avec Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ollamaResponse = $input.first().json;\nconst prev = $('Préparer prompt IA').first().json;\n\nlet raw = ollamaResponse.response || '';\nraw = raw.replace(/```json\\s*/gi, '').replace(/```\\s*/g, '').trim();\n\nlet analysis;\ntry {\n  analysis = JSON.parse(raw);\n} catch (e) {\n  throw new Error('Réponse Ollama non parsable en JSON : ' + raw.substring(0, 500));\n}\n\nconst score = Math.min(100, Math.max(0, parseInt(analysis.score_compatibilite, 10) || 0));\n\nreturn [{\n  json: {\n    message_id: prev.messageId,\n    email_expediteur: prev.email_expediteur,\n    sujet_email: prev.sujet_email,\n    date_reception: prev.date_reception,\n    nom_fichier_cv: prev.nom_fichier_cv,\n    texte_cv: prev.texte_cv,\n    resume_candidat: analysis.resume || '',\n    competences: analysis.competences || [],\n    score_compatibilite: score,\n    points_forts: analysis.points_forts || [],\n    points_faibles: analysis.points_faibles || [],\n    analyse_complete: analysis,\n    offre_emploi_id: prev.offre_emploi_id,\n    offre_titre: prev.offre_titre\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0010-4000-8000-000000000010",
+      "name": "Parser réponse IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO candidatures (\n  message_id,\n  email_expediteur,\n  sujet_email,\n  date_reception,\n  nom_fichier_cv,\n  texte_cv,\n  resume_candidat,\n  competences,\n  score_compatibilite,\n  points_forts,\n  points_faibles,\n  analyse_complete,\n  offre_emploi_id\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13\n)\nON CONFLICT (message_id) DO UPDATE SET\n  score_compatibilite = EXCLUDED.score_compatibilite,\n  resume_candidat = EXCLUDED.resume_candidat,\n  competences = EXCLUDED.competences,\n  points_forts = EXCLUDED.points_forts,\n  points_faibles = EXCLUDED.points_faibles,\n  analyse_complete = EXCLUDED.analyse_complete,\n  date_traitement = NOW()\nRETURNING id, score_compatibilite;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.message_id,\n  $json.email_expediteur,\n  $json.sujet_email,\n  $json.date_reception,\n  $json.nom_fichier_cv,\n  $json.texte_cv,\n  $json.resume_candidat,\n  JSON.stringify($json.competences),\n  $json.score_compatibilite,\n  JSON.stringify($json.points_forts),\n  JSON.stringify($json.points_faibles),\n  JSON.stringify($json.analyse_complete),\n  $json.offre_emploi_id\n] }}"
+        }
+      },
+      "id": "a1b2c3d4-0011-4000-8000-000000000011",
+      "name": "Enregistrer en base",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1980, 300],
+      "credentials": {
+        "postgres": {
+          "id": "a1b2c3d4-0002-4000-8000-000000000002",
+          "name": "PostgreSQL RH"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const parsed = $('Parser réponse IA').first().json;\n\nif (!parsed?.email_expediteur) {\n  throw new Error('Données candidature manquantes pour la notification');\n}\n\nconst score = parsed.score_compatibilite;\nconst emoji = score >= 80 ? '🟢' : score >= 60 ? '🟡' : '🔴';\n\nconst competences = (parsed.competences || []).map(c => `  • ${c}`).join('\\n');\nconst pointsForts = (parsed.points_forts || []).map(p => `  • ${p}`).join('\\n');\n\nconst html = `\n<h2>${emoji} Nouvelle candidature analysée</h2>\n<p><strong>Candidat :</strong> ${parsed.email_expediteur}</p>\n<p><strong>Offre :</strong> ${parsed.offre_titre}</p>\n<p><strong>Score de compatibilité :</strong> ${score}/100</p>\n<h3>Résumé</h3>\n<p>${parsed.resume_candidat}</p>\n<h3>Compétences détectées</h3>\n<pre>${competences}</pre>\n<h3>Points forts</h3>\n<pre>${pointsForts}</pre>\n<p><em>CV : ${parsed.nom_fichier_cv} - Traitement automatique Assistant RH IA</em></p>\n`;\n\nreturn [{\n  json: {\n    to: '@@RECRUITER_EMAIL@@',\n    subject: `[RH IA] Candidature ${parsed.email_expediteur} - Score ${score}/100`,\n    html\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0012-4000-8000-000000000012",
+      "name": "Préparer notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "@@SMTP_USER@@",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0013-4000-8000-000000000013",
+      "name": "Notifier le recruteur",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2420, 300],
+      "credentials": {
+        "smtp": {
+          "id": "a1b2c3d4-0003-4000-8000-000000000003",
+          "name": "SMTP Notification"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-0014-4000-8000-000000000014",
+      "name": "Aucun PDF",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [880, 520]
+    }
+  ],
+  "connections": {
+    "Email reçu (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Filtrer pièces jointes PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrer pièces jointes PDF": {
+      "main": [
+        [
+          {
+            "node": "PDF trouvé ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PDF trouvé ?": {
+      "main": [
+        [
+          {
+            "node": "Extraire texte PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Récupérer offre active",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aucun PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraire texte PDF": {
+      "main": [
+        [
+          {
+            "node": "Fusionner CV et offre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Récupérer offre active": {
+      "main": [
+        [
+          {
+            "node": "Fusionner CV et offre",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fusionner CV et offre": {
+      "main": [
+        [
+          {
+            "node": "Préparer prompt IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer prompt IA": {
+      "main": [
+        [
+          {
+            "node": "Analyser avec Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyser avec Ollama": {
+      "main": [
+        [
+          {
+            "node": "Parser réponse IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser réponse IA": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer en base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer en base": {
+      "main": [
+        [
+          {
+            "node": "Préparer notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Préparer notification": {
+      "main": [
+        [
+          {
+            "node": "Notifier le recruteur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "b2c3d4e5-0001-4000-8000-000000000003",
+  "active": true,
+  "tags": [
+    {
+      "name": "RH",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "IA locale",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "assistant-rh-ia-local"
+  }
+}
