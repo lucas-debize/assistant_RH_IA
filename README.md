@@ -31,10 +31,9 @@ Email de score reçu par le recruteur après analyse du CV.
 
 Parcours complet : envoi d'un email avec CV → analyse IA → notification.
 
-<video src="assets/videos/demo.mp4" controls width="100%">
-  Votre navigateur ne supporte pas la lecture vidéo.
-  <a href="assets/videos/demo.mp4">Télécharger la démo</a>.
-</video>
+[![Démo vidéo — cliquer pour lire](assets/images/demo-poster.png)](assets/videos/demo.mp4)
+
+> GitHub ne lit pas les MP4 directement dans le README. Cliquez sur l'image pour ouvrir le lecteur vidéo.
 
 
 ## Principe
@@ -104,7 +103,7 @@ docker compose exec postgres psql -U rh_admin -d assistant_rh -c \
 assistant_RH_IA/
 ├── .env.example
 ├── assets/
-│   ├── images/          # workflow-n8n.png, notification-email.png
+│   ├── images/          # workflow-n8n.png, notification-email.png, demo-poster.png
 │   └── videos/          # demo.mp4
 ├── database/init.sql
 ├── docker-compose.yml
