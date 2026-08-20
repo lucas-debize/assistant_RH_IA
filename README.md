@@ -2,6 +2,14 @@
 
 Workflow **100 % local** : réception d'un email avec CV PDF → extraction → analyse IA (Ollama) → stockage PostgreSQL → notification recruteur. Configuration via **un seul fichier `.env`**.
 
+
+### Démo vidéo
+
+Parcours complet : envoi d'un email avec CV → analyse IA → notification.
+
+https://github.com/user-attachments/assets/f49e0d77-c8af-4338-b6ac-9ff3ac052adf
+
+
 ## Aperçu
 
 ```mermaid
@@ -26,14 +34,6 @@ Capture du workflow publié dans l'interface n8n.
 Email de score reçu par le recruteur après analyse du CV.
 
 ![Notification email recruteur](assets/images/notification-email.png)
-
-### Démo vidéo
-
-Parcours complet : envoi d'un email avec CV → analyse IA → notification.
-
-[![Démo vidéo — cliquer pour lire](assets/images/demo-poster.png)](assets/videos/demo.mp4)
-
-> GitHub ne lit pas les MP4 directement dans le README. Cliquez sur l'image pour ouvrir le lecteur vidéo.
 
 
 ## Principe
@@ -140,7 +140,3 @@ make up
 make down
 make logs
 ```
-
-## Licence
-
-Projet open source - usage libre pour apprentissage et démonstration.
